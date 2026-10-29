@@ -1,0 +1,1004 @@
+<title>생태계 평형 시뮬레이터</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* Layout: 현장 관측 콘솔. 왼쪽 큰 들판 + 오른쪽 수치 패널, 아래에 속도 막대, 그래프(왼쪽)와 개입 버튼(오른쪽) */
+:root {
+  --bg: #ecf0ea;
+  --panel: #f8faf6;
+  --panel-2: #e1e8df;
+  --ink: #17231c;
+  --ink-2: #4a5c51;
+  --line: #c9d5c9;
+  --plant: #2f8a43;
+  --deer: #a8601a;
+  --wolf: #3b4f9a;
+  --alert: #c0392b;
+  --warn: #a86f12;
+  --ok: #2b7a4b;
+  --info: #2a67b0;
+  --soil: #cfc7b2;
+  --grass: #4f9e5b;
+  --btn-ink: #17231c;
+  --btn-on: #f3f7f1;
+  --font-body: "IBM Plex Sans KR", "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  --font-num: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1713;
+    --panel: #17221c;
+    --panel-2: #1f2e26;
+    --ink: #e6efe8;
+    --ink-2: #9db0a4;
+    --line: #2b3b32;
+    --plant: #66c079;
+    --deer: #e0a04e;
+    --wolf: #93a6f0;
+    --alert: #f27a6b;
+    --warn: #e0b04e;
+    --ok: #6bc790;
+    --info: #7db0f0;
+    --soil: #2c2a22;
+    --grass: #4e9a5b;
+    --btn-ink: #e6efe8;
+    --btn-on: #0f1713;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1713;
+  --panel: #17221c;
+  --panel-2: #1f2e26;
+  --ink: #e6efe8;
+  --ink-2: #9db0a4;
+  --line: #2b3b32;
+  --plant: #66c079;
+  --deer: #e0a04e;
+  --wolf: #93a6f0;
+  --alert: #f27a6b;
+  --warn: #e0b04e;
+  --ok: #6bc790;
+  --info: #7db0f0;
+  --soil: #2c2a22;
+  --grass: #4e9a5b;
+  --btn-ink: #e6efe8;
+  --btn-on: #0f1713;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.55;
+  padding-block: 20px 32px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+button, input { font: inherit; color: inherit; }
+.app { max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+
+.top { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px 24px; flex-wrap: wrap; }
+.top h1 { margin: 0; font-size: clamp(22px, 4.2vw, 30px); line-height: 1.25; font-weight: 700; letter-spacing: -0.01em; text-wrap: balance; }
+.top .sub { margin: 4px 0 0; color: var(--ink-2); max-width: 60ch; }
+.clock { display: flex; align-items: baseline; gap: 6px; color: var(--ink-2); }
+.clock .num { font-family: var(--font-num); font-size: 26px; color: var(--ink); font-variant-numeric: tabular-nums; }
+
+.grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  grid-template-areas:
+    "field readout"
+    "play  play"
+    "chart side";
+}
+.field-card { grid-area: field; }
+.readout { grid-area: readout; }
+.playback { grid-area: play; }
+.chart-card { grid-area: chart; }
+.side { grid-area: side; }
+@media (max-width: 900px) {
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "field" "readout" "play" "chart" "side";
+  }
+}
+
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; min-width: 0; }
+.field-card { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.field-wrap { position: relative; aspect-ratio: 16 / 9; width: 100%; max-width: 100%; border-radius: 6px; overflow: hidden; background: var(--soil); }
+.field-wrap canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.legend { position: absolute; left: 8px; bottom: 8px; display: flex; gap: 12px; padding: 4px 10px; border-radius: 4px; background: color-mix(in srgb, var(--panel) 88%, transparent); font-size: 12px; flex-wrap: wrap; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; }
+.sw.p { background: var(--plant); }
+.sw.d { background: var(--deer); }
+.sw.w { background: var(--wolf); }
+.ring { display: inline-block; width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--ink-2); }
+
+.narr { margin: 0; padding: 8px 12px; background: var(--panel-2); border-radius: 6px; min-height: 2.9em; display: flex; align-items: center; }
+.predict { border: 1.5px solid var(--info); border-radius: 6px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+.predict h3 { margin: 0; font-size: 15px; color: var(--info); }
+.predict p { margin: 0; }
+
+.readout { padding: 14px; display: flex; flex-direction: column; gap: 14px; }
+.state { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 6px; font-weight: 600; background: var(--panel-2); }
+.state i { width: 10px; height: 10px; border-radius: 50%; background: var(--ok); flex: none; }
+.state[data-s="shake"] i { background: var(--warn); }
+.state[data-s="recover"] i { background: var(--info); }
+.state[data-s="broken"] i { background: var(--alert); }
+.state small { display: block; font-weight: 400; color: var(--ink-2); font-size: 12px; }
+.rows { display: flex; flex-direction: column; gap: 14px; }
+.row { display: grid; grid-template-columns: 1fr auto; gap: 4px 8px; align-items: baseline; }
+.rn { display: flex; align-items: center; gap: 8px; font-weight: 500; }
+.rv { font-family: var(--font-num); font-size: 22px; font-variant-numeric: tabular-nums; text-align: right; }
+.rv small { font-family: var(--font-body); font-size: 12px; color: var(--ink-2); margin-left: 4px; }
+.bar { grid-column: 1 / -1; position: relative; height: 8px; border-radius: 4px; background: var(--panel-2); overflow: hidden; }
+.bar .fill { position: absolute; inset: 0 auto 0 0; border-radius: 4px; transition: width 0.15s linear; }
+.bar .mid { position: absolute; left: 50%; top: -2px; bottom: -2px; width: 2px; background: var(--ink); opacity: 0.55; z-index: 1; }
+.rs { grid-column: 1 / -1; font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums; display: flex; justify-content: space-between; }
+.status-chips { display: flex; gap: 6px; flex-wrap: wrap; min-height: 26px; }
+.chip { font-size: 12px; font-weight: 600; padding: 2px 10px; border-radius: 12px; border: 1px solid var(--alert); color: var(--alert); }
+.chip.dr { border-color: var(--warn); color: var(--warn); }
+
+.playback { padding: 12px 14px; display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: center; }
+.btns { display: flex; gap: 8px; flex-wrap: wrap; }
+.btn { border: 1px solid var(--line); background: var(--panel); border-radius: 6px; padding: 8px 14px; cursor: pointer; font-weight: 500; min-height: 40px; }
+.btn:hover { border-color: var(--ink-2); }
+.btn.primary { background: var(--btn-ink); color: var(--btn-on); border-color: var(--btn-ink); min-width: 104px; font-weight: 600; }
+.btn:focus-visible, input:focus-visible, summary:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }
+.speed { flex: 1 1 260px; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.speed label { display: flex; justify-content: space-between; gap: 8px; font-weight: 500; }
+.speed output { font-family: var(--font-num); color: var(--ink-2); }
+.speed input[type=range] { width: 100%; accent-color: var(--btn-ink); margin: 6px 0 0; }
+.ticks { display: flex; justify-content: space-between; font-family: var(--font-num); font-size: 11px; color: var(--ink-2); }
+.toggle { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.toggle input { width: 18px; height: 18px; accent-color: var(--btn-ink); }
+
+.chart-card { padding: 12px; display: flex; flex-direction: column; gap: 8px; min-height: 480px; }
+.card-h { margin: 0; font-size: 14px; font-weight: 600; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.card-h span { font-weight: 400; color: var(--ink-2); font-size: 12px; }
+.chart-wrap { position: relative; flex: 1; min-height: 420px; touch-action: pan-y; }
+.chart-wrap canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.pyr-wrap { position: relative; height: 190px; }
+.pyr-wrap canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.tip { position: absolute; top: 4px; pointer-events: none; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 4px 8px; font-size: 12px; font-family: var(--font-num); white-space: nowrap; display: none; z-index: 2; }
+
+.side { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.side .card { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.act { display: flex; flex-direction: column; gap: 8px; }
+.act .btn { text-align: left; display: flex; flex-direction: column; align-items: flex-start; gap: 0; padding: 8px 12px; }
+.act .btn b { font-weight: 600; }
+.act .btn span { font-size: 12px; color: var(--ink-2); font-weight: 400; }
+.act .btn.on { border-color: var(--alert); }
+.act .btn.on b { color: var(--alert); }
+.act .btn[disabled] { opacity: 0.55; cursor: default; }
+.scn p { margin: 0; color: var(--ink-2); font-size: 13px; }
+.scn-steps { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.scn-steps li { display: flex; gap: 8px; color: var(--ink-2); }
+.scn-steps li i { width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--ink-2); margin-top: 7px; flex: none; }
+.scn-steps li.done { color: var(--ink); }
+.scn-steps li.done i { background: var(--ok); border-color: var(--ok); }
+.scn-steps li.now { color: var(--ink); font-weight: 600; }
+.scn-steps li.now i { border-color: var(--info); background: var(--info); }
+.log { list-style: none; margin: 0; padding: 0; max-height: 132px; overflow-y: auto; font-size: 13px; display: flex; flex-direction: column; gap: 3px; }
+.log li { display: flex; gap: 10px; }
+.log .yr { font-family: var(--font-num); font-size: 12px; color: var(--ink-2); min-width: 54px; font-variant-numeric: tabular-nums; }
+.log .empty { color: var(--ink-2); }
+details summary { cursor: pointer; font-weight: 600; }
+details ol { margin: 8px 0 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.note { margin: 0; font-size: 12px; color: var(--ink-2); max-width: 90ch; }
+@media (prefers-reduced-motion: reduce) { .bar .fill { transition: none; } }
+</style>
+
+<div class="app">
+  <header class="top">
+    <div>
+      <h1>생태계 평형 시뮬레이터</h1>
+      <p class="sub">식물, 사슴, 늑대로 이어지는 먹이 사슬에 외부 개입을 더하고, 평형이 깨지고 회복되는 과정을 그래프로 관찰합니다.</p>
+    </div>
+    <div class="clock" aria-live="off"><span>경과 시간</span><span class="num" id="clock">0.0</span><span>년</span></div>
+  </header>
+
+  <main class="grid">
+    <section class="card field-card" aria-label="들판 시뮬레이션">
+      <div class="field-wrap">
+        <canvas id="field"></canvas>
+        <div class="legend"><span><i class="sw p"></i>식물</span><span><i class="sw d"></i>사슴</span><span><i class="sw w"></i>늑대</span><span><i class="ring"></i>원: 개체수 감소</span></div>
+      </div>
+      <p class="narr" id="narr" aria-live="polite"></p>
+      <div class="predict" id="predict" hidden>
+        <h3>예측해 보기</h3>
+        <p id="predictQ"></p>
+        <div><button class="btn primary" id="predictGo" type="button">개입 실행하고 지켜보기</button></div>
+      </div>
+    </section>
+
+    <aside class="card readout" aria-label="현재 개체군 수치">
+      <div class="state" id="state" data-s="stable"><i></i><div><span id="stateTxt">평형 상태</span><small id="stateSub">세 개체군이 평형 수준 근처에 있어요</small></div></div>
+      <div class="status-chips" id="chips"></div>
+      <div class="rows">
+        <div class="row">
+          <div class="rn"><i class="sw p"></i>식물량</div>
+          <div class="rv"><span id="vP">0</span><small>지수</small></div>
+          <div class="bar"><div class="mid"></div><div class="fill" id="bP" style="background:var(--plant)"></div></div>
+          <div class="rs"><span id="eP"></span><span id="rP"></span></div>
+        </div>
+        <div class="row">
+          <div class="rn"><i class="sw d"></i>사슴</div>
+          <div class="rv"><span id="vD">0</span><small>마리</small></div>
+          <div class="bar"><div class="mid"></div><div class="fill" id="bD" style="background:var(--deer)"></div></div>
+          <div class="rs"><span id="eD"></span><span id="rD"></span></div>
+        </div>
+        <div class="row">
+          <div class="rn"><i class="sw w"></i>늑대</div>
+          <div class="rv"><span id="vW">0</span><small>마리</small></div>
+          <div class="bar"><div class="mid"></div><div class="fill" id="bW" style="background:var(--wolf)"></div></div>
+          <div class="rs"><span id="eW"></span><span id="rW"></span></div>
+        </div>
+      </div>
+      <p class="note">막대의 가운데 선이 평형 수준(100%)이에요. 막대 전체 길이는 평형의 200%입니다.</p>
+    </aside>
+
+    <section class="card playback" aria-label="재생 및 속도">
+      <div class="btns">
+        <button class="btn primary" id="play" type="button">일시정지</button>
+        <button class="btn" id="step" type="button">1년 진행</button>
+        <button class="btn" id="reset" type="button">처음부터</button>
+      </div>
+      <div class="speed">
+        <label for="speed"><span>시뮬레이션 속도</span><output id="speedOut" for="speed">2배속 (1초 = 2년)</output></label>
+        <input id="speed" type="range" min="0" max="6" step="1" value="3">
+        <div class="ticks" aria-hidden="true"><span>0.25</span><span>0.5</span><span>1</span><span>2</span><span>4</span><span>8</span><span>16</span></div>
+      </div>
+      <label class="toggle" for="noise"><input id="noise" type="checkbox" checked>자연 변동 (날씨 영향)</label>
+    </section>
+
+    <section class="card chart-card" aria-label="개체수 변동 그래프">
+      <h2 class="card-h">개체수 변동 그래프 <span>점선은 평형 수준 · 그래프를 짚으면 값이 표시돼요</span></h2>
+      <div class="chart-wrap" id="chartWrap">
+        <canvas id="chart"></canvas>
+        <div class="tip" id="tip"></div>
+      </div>
+    </section>
+
+    <aside class="side">
+      <section class="card" aria-label="생태 피라미드">
+        <h2 class="card-h">생태 피라미드 <span>상대 생물량</span></h2>
+        <div class="pyr-wrap" id="pyrWrap"><canvas id="pyr"></canvas></div>
+        <p class="note" id="pyrNote" aria-live="polite"></p>
+        <p class="note">점선은 평형일 때의 모양이에요. 한 마리의 무게를 사슴 2, 늑대 6으로 가정해 식물량과 같은 단위로 맞췄어요.</p>
+      </section>
+
+      <section class="card" aria-label="외부 개입">
+        <h2 class="card-h">외부 개입</h2>
+        <div class="act">
+          <button class="btn" id="aHunt" type="button"><b>늑대 사냥 허용</b><span>사슴을 보호하려고 늑대를 사냥합니다</span></button>
+          <button class="btn" id="aReintro" type="button"><b>늑대 재도입</b><span>사냥을 금지하고 늑대 10마리를 들여옵니다</span></button>
+          <button class="btn" id="aDeer" type="button"><b>사슴 방사</b><span>사슴 40마리를 추가로 풀어 놓습니다</span></button>
+          <button class="btn" id="aDrought" type="button"><b>가뭄 4년</b><span>식물 성장이 70% 줄어듭니다</span></button>
+        </div>
+      </section>
+
+      <section class="card scn" aria-label="수업 시나리오">
+        <h2 class="card-h">수업 시나리오: 늑대 사냥과 재도입</h2>
+        <p>처음부터 다시 시작해 개입 직전마다 멈추고, 결과를 먼저 예측해 보게 합니다.</p>
+        <ul class="scn-steps" id="scnSteps">
+          <li><i></i>평형 상태 관찰 (10년)</li>
+          <li><i></i>늑대 사냥 허용</li>
+          <li><i></i>늑대 재도입 후 회복 관찰</li>
+        </ul>
+        <div><button class="btn" id="scnStart" type="button">시나리오 시작</button></div>
+      </section>
+
+      <section class="card" aria-label="개입 기록">
+        <h2 class="card-h">개입 기록</h2>
+        <ul class="log" id="log"><li class="empty">아직 개입이 없어요.</li></ul>
+      </section>
+
+      <section class="card">
+        <details>
+          <summary>수업 활동 제안</summary>
+          <ol>
+            <li>평형 상태의 개체수는 왜 완전히 일정하지 않고 조금씩 흔들릴까요?</li>
+            <li>늑대 사냥을 허용하면 사슴과 식물은 어떤 순서로 변할까요?</li>
+            <li>늑대가 없는데도 사슴이 늘다가 다시 줄어드는 이유는 무엇일까요?</li>
+            <li>늑대를 다시 들여오면 평형은 바로 회복될까요? 얼마나 걸리나요?</li>
+            <li>가뭄이 오면 어떤 생물부터, 어떤 순서로 영향을 받을까요?</li>
+          </ol>
+        </details>
+      </section>
+    </aside>
+  </main>
+
+  <p class="note">개념 이해를 위해 단순화한 수학 모델입니다. 실제 생태계의 개체수와 시간 규모는 이와 다를 수 있어요. 들판에는 사슴 최대 220마리, 늑대 최대 60마리까지 그려집니다.</p>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var K = 1000, DT = 0.02, SIGMA = 0.06;
+  var PR = { r: 1.3, hP: 250, cD: 3.7, bD: 0.9, mD: 0.25, cW: 5.8, hD: 60, bW: 1.0, mW: 0.30, qW: 0.03 };
+  var SPEEDS = [0.25, 0.5, 1, 2, 4, 8, 16];
+
+  var hunt = 0, drought = 1, droughtEnd = null;
+  var S = { t: 0, P: 631, D: 114, W: 12 };
+  var EQ = { P: 631, D: 114, W: 12 };
+  var running = true, speedIdx = 3, acc = 0, noiseOn = true;
+  var hT = [], hP = [], hD = [], hW = [], nextRec = 0;
+  var spans = [], marks = [], logItems = [];
+  var devHist = [];
+  var scn = null; // {step:0|1|2|3, pending:null|obj}
+
+  function gauss() {
+    var u = 0, v = 0;
+    while (u === 0) u = Math.random();
+    while (v === 0) v = Math.random();
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+  }
+
+  function deriv(P, D, W, hn, dr) {
+    var fp = P / (P + PR.hP), fd = D / (D + PR.hD);
+    return [
+      PR.r * dr * P * (1 - P / K) - PR.cD * D * fp,
+      PR.bD * D * fp - PR.mD * D - PR.cW * W * fd,
+      PR.bW * W * fd - PR.mW * W - PR.qW * W * W - hn * W
+    ];
+  }
+  function stepOnce(s, dt, hn, dr, noisy) {
+    var k1 = deriv(s.P, s.D, s.W, hn, dr);
+    var k2 = deriv(s.P + dt / 2 * k1[0], s.D + dt / 2 * k1[1], s.W + dt / 2 * k1[2], hn, dr);
+    var k3 = deriv(s.P + dt / 2 * k2[0], s.D + dt / 2 * k2[1], s.W + dt / 2 * k2[2], hn, dr);
+    var k4 = deriv(s.P + dt * k3[0], s.D + dt * k3[1], s.W + dt * k3[2], hn, dr);
+    s.P = Math.max(0, s.P + dt / 6 * (k1[0] + 2 * k2[0] + 2 * k3[0] + k4[0]));
+    s.D = Math.max(0, s.D + dt / 6 * (k1[1] + 2 * k2[1] + 2 * k3[1] + k4[1]));
+    s.W = Math.max(0, s.W + dt / 6 * (k1[2] + 2 * k2[2] + 2 * k3[2] + k4[2]));
+    if (noisy) s.P = Math.min(K, s.P * Math.exp(SIGMA * Math.sqrt(dt) * gauss()));
+    if (s.W < 0.5) s.W = 0;
+    if (s.D < 1) s.D = 0;
+    s.t += dt;
+  }
+
+  function computeEq() {
+    var s = { t: 0, P: 600, D: 100, W: 8 };
+    for (var i = 0; i < 12000; i++) stepOnce(s, 0.05, 0, 1, false);
+    EQ = { P: s.P, D: s.D, W: s.W };
+  }
+
+  /* ---------- 기록 ---------- */
+  function record() {
+    hT.push(S.t); hP.push(S.P); hD.push(S.D); hW.push(S.W);
+    devHist.push([S.t, deviation()]);
+    if (hT.length > 9000) { hT.splice(0, 1000); hP.splice(0, 1000); hD.splice(0, 1000); hW.splice(0, 1000); devHist.splice(0, 1000); }
+  }
+  function deviation() {
+    var a = Math.abs(S.P / EQ.P - 1), b = Math.abs(S.D / EQ.D - 1), c = S.W > 0 ? Math.abs(S.W / EQ.W - 1) : 1;
+    return Math.max(a, b, c);
+  }
+
+  /* ---------- 진행 ---------- */
+  function advance(years) {
+    acc += years;
+    var guard = 0;
+    while (acc >= DT && guard < 4000) {
+      guard++;
+      if (scn && scn.pending == null && scn.step < scn.steps.length && S.t >= scn.steps[scn.step].t) {
+        showPredict(scn.steps[scn.step]);
+        acc = 0; running = false; syncPlay();
+        return;
+      }
+      if (droughtEnd !== null && S.t >= droughtEnd) endDrought();
+      stepOnce(S, DT, hunt, drought, noiseOn);
+      acc -= DT;
+      if (S.t >= nextRec) { record(); nextRec += 0.25; }
+    }
+  }
+
+  /* ---------- 개입 ---------- */
+  function addLog(txt) {
+    logItems.unshift({ t: S.t, txt: txt });
+    if (logItems.length > 30) logItems.pop();
+    renderLog();
+  }
+  function closeSpan(type) {
+    for (var i = 0; i < spans.length; i++) if (spans[i].type === type && spans[i].t1 === null) spans[i].t1 = S.t;
+  }
+  function doHunt() {
+    if (!hunt) {
+      hunt = 1.5;
+      spans.push({ type: 'hunt', t0: S.t, t1: null, label: '사냥 허용' });
+      addLog('늑대 사냥 허용');
+    } else {
+      hunt = 0; closeSpan('hunt');
+      addLog('늑대 사냥 금지');
+    }
+    syncButtons();
+  }
+  function doReintro() {
+    if (hunt) { hunt = 0; closeSpan('hunt'); }
+    S.W += 10;
+    marks.push({ t: S.t, label: '늑대 재도입' });
+    addLog('늑대 10마리 재도입, 사냥 금지');
+    syncButtons();
+  }
+  function doDeer() {
+    S.D += 40;
+    marks.push({ t: S.t, label: '사슴 방사' });
+    addLog('사슴 40마리 방사');
+  }
+  function doDrought() {
+    if (droughtEnd !== null) return;
+    drought = 0.3; droughtEnd = S.t + 4;
+    spans.push({ type: 'drought', t0: S.t, t1: null, label: '가뭄' });
+    addLog('가뭄 시작 (4년)');
+    syncButtons();
+  }
+  function endDrought() {
+    drought = 1; droughtEnd = null; closeSpan('drought');
+    addLog('가뭄 끝');
+    syncButtons();
+  }
+
+  /* ---------- 시나리오 ---------- */
+  var SCN_STEPS = [
+    { t: 10, q: '지금은 평형 상태예요. 사슴을 보호하려고 늑대 사냥을 허용하면 사슴과 식물의 개체수는 어떻게 변할까요? 먼저 예측해 보세요.', go: doHunt },
+    { t: 34, q: '늑대가 사라진 뒤 사슴이 늘고 식물이 줄었다가 다시 회복됐어요. 이제 늑대를 다시 들여오면 평형은 어떻게 될까요? 걸리는 시간도 예측해 보세요.', go: doReintro }
+  ];
+  function startScenario() {
+    resetAll(false);
+    scn = { step: 0, pending: null, steps: SCN_STEPS };
+    running = true; syncPlay(); syncScn();
+  }
+  function showPredict(st) {
+    scn.pending = st;
+    document.getElementById('predictQ').textContent = st.q;
+    document.getElementById('predict').hidden = false;
+    syncScn();
+  }
+  function runPending() {
+    if (!scn || !scn.pending) return false;
+    var st = scn.pending;
+    scn.pending = null; scn.step++;
+    document.getElementById('predict').hidden = true;
+    st.go();
+    running = true; syncPlay(); syncScn();
+    return true;
+  }
+  function syncScn() {
+    var lis = document.getElementById('scnSteps').children;
+    var cur = scn ? scn.step : -1;
+    var vals = [0, 1, 2];
+    for (var i = 0; i < lis.length; i++) {
+      lis[i].className = '';
+      if (!scn) continue;
+      // 단계 0: 첫 개입 전, 1: 사냥 이후, 2: 재도입 이후
+      var done = i < cur;
+      var now = i === cur;
+      if (done) lis[i].className = 'done';
+      else if (now) lis[i].className = 'now';
+    }
+  }
+
+  /* ---------- 상태 문구 ---------- */
+  function describe() {
+    var d = Math.round(S.D), w = Math.round(S.W);
+    if (S.D === 0) return '사슴이 모두 사라졌어요. 늑대도 먹이를 잃게 됩니다.';
+    if (S.W === 0 && S.D > 1.25 * EQ.D && S.P > 0.5 * EQ.P) return '천적인 늑대가 없어서 사슴이 빠르게 늘고 있어요.';
+    if (S.P < 0.3 * EQ.P && S.D > EQ.D * 0.5 && S.W === 0) return '식물이 크게 줄어 사슴의 먹이가 부족해요. 사슴이 곧 굶주리게 됩니다.';
+    if (S.P < 0.3 * EQ.P) return '식물이 크게 줄어 사슴의 먹이가 부족해요.';
+    if (S.W === 0) return '늑대가 없는 상태예요. 늑대를 다시 들여오기 전에는 원래의 평형으로 돌아오지 못해요.';
+    if (drought < 1) return '가뭄으로 식물이 잘 자라지 못해요. 사슴, 늑대 순서로 영향이 이어집니다.';
+    var dev = deviation();
+    if (dev < 0.25) return '식물, 사슴, 늑대가 평형 수준 근처에서 서로 균형을 맞추고 있어요.';
+    if (isRecovering()) return '개체수가 평형 수준으로 되돌아가는 중이에요.';
+    return '개체군이 서로 영향을 주고받으며 출렁이고 있어요.';
+  }
+  function isRecovering() {
+    var cur = deviation(), prev = null;
+    for (var i = devHist.length - 1; i >= 0; i--) {
+      if (devHist[i][0] <= S.t - 1.5) { prev = devHist[i][1]; break; }
+    }
+    return prev !== null && cur < prev - 0.03;
+  }
+  function stateInfo() {
+    var dev = deviation();
+    if (S.W === 0) return ['broken', '평형 붕괴', '최상위 포식자가 사라졌어요'];
+    if (dev < 0.25) return ['stable', '평형 상태', '세 개체군이 평형 수준 근처에 있어요'];
+    if (isRecovering()) return ['recover', '회복 중', '평형 수준으로 돌아가고 있어요'];
+    if (dev >= 0.5) return ['broken', '평형 붕괴', '평형 수준에서 크게 벗어났어요'];
+    return ['shake', '흔들리는 중', '평형 수준에서 벗어나 출렁이고 있어요'];
+  }
+
+  /* ---------- DOM 갱신 ---------- */
+  var el = {};
+  function $(id) { return document.getElementById(id); }
+  function pct(v, e) { var r = e > 0 ? (v / e - 1) * 100 : 0; return (r >= 0 ? '+' : '') + Math.round(r) + '%'; }
+  function updateReadout() {
+    $('clock').textContent = S.t.toFixed(1);
+    $('vP').textContent = Math.round(S.P);
+    $('vD').textContent = Math.round(S.D);
+    $('vW').textContent = Math.round(S.W);
+    $('eP').textContent = '평형 ' + Math.round(EQ.P);
+    $('eD').textContent = '평형 ' + Math.round(EQ.D);
+    $('eW').textContent = '평형 ' + Math.round(EQ.W);
+    $('rP').textContent = pct(S.P, EQ.P);
+    $('rD').textContent = pct(S.D, EQ.D);
+    $('rW').textContent = pct(S.W, EQ.W);
+    $('bP').style.width = Math.min(100, S.P / EQ.P * 50) + '%';
+    $('bD').style.width = Math.min(100, S.D / EQ.D * 50) + '%';
+    $('bW').style.width = Math.min(100, S.W / EQ.W * 50) + '%';
+    var si = stateInfo(), st = $('state');
+    st.setAttribute('data-s', si[0]);
+    $('stateTxt').textContent = si[1];
+    $('stateSub').textContent = si[2];
+    var n = describe();
+    if ($('narr').textContent !== n) $('narr').textContent = n;
+    var chips = '';
+    if (hunt) chips += '<span class="chip">늑대 사냥 허용 중</span>';
+    if (droughtEnd !== null) chips += '<span class="chip dr">가뭄 ' + Math.max(0, droughtEnd - S.t).toFixed(1) + '년 남음</span>';
+    if (chips !== el.chips) { $('chips').innerHTML = chips; el.chips = chips; }
+  }
+  function renderLog() {
+    var ul = $('log');
+    if (!logItems.length) { ul.innerHTML = '<li class="empty">아직 개입이 없어요.</li>'; return; }
+    ul.innerHTML = logItems.map(function (it) {
+      return '<li><span class="yr">' + it.t.toFixed(1) + '년</span><span>' + it.txt + '</span></li>';
+    }).join('');
+  }
+  function syncButtons() {
+    var h = $('aHunt');
+    h.classList.toggle('on', !!hunt);
+    h.querySelector('b').textContent = hunt ? '늑대 사냥 금지' : '늑대 사냥 허용';
+    h.querySelector('span').textContent = hunt ? '사냥을 멈추고 늑대를 보호합니다' : '사슴을 보호하려고 늑대를 사냥합니다';
+    var d = $('aDrought');
+    d.disabled = droughtEnd !== null;
+    d.querySelector('b').textContent = droughtEnd !== null ? '가뭄 진행 중' : '가뭄 4년';
+  }
+  function syncPlay() {
+    $('play').textContent = running ? '일시정지' : '재생';
+  }
+  function syncSpeed() {
+    var sp = SPEEDS[speedIdx];
+    $('speedOut').textContent = sp + '배속 (1초 = ' + sp + '년)';
+  }
+
+  /* ---------- 초기화 ---------- */
+  function resetAll(prerun) {
+    S = { t: 0, P: EQ.P, D: EQ.D, W: EQ.W };
+    hunt = 0; drought = 1; droughtEnd = null; acc = 0;
+    hT = []; hP = []; hD = []; hW = []; devHist = []; nextRec = 0;
+    spans = []; marks = []; logItems = []; scn = null;
+    $('predict').hidden = true;
+    renderLog(); syncButtons(); syncScn();
+    if (prerun) {
+      var save = scn; scn = null;
+      for (var i = 0; i < 24 / DT; i++) {
+        stepOnce(S, DT, 0, 1, noiseOn);
+        if (S.t >= nextRec) { record(); nextRec += 0.25; }
+      }
+    } else { record(); nextRec = 0.25; }
+    syncAgents(true);
+  }
+
+  /* ---------- 색상 ---------- */
+  var C = {};
+  function readColors() {
+    var cs = getComputedStyle(document.documentElement);
+    ['--plant', '--deer', '--wolf', '--alert', '--warn', '--ink', '--ink-2', '--line', '--panel', '--panel-2', '--soil', '--grass'].forEach(function (k) {
+      C[k] = cs.getPropertyValue(k).trim();
+    });
+    C.soilRGB = hex(C['--soil']); C.grassRGB = hex(C['--grass']);
+  }
+  function hex(h) {
+    h = h.replace('#', '');
+    if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+    return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+  }
+  function mix(a, b, t) {
+    return 'rgb(' + Math.round(a[0] + (b[0] - a[0]) * t) + ',' + Math.round(a[1] + (b[1] - a[1]) * t) + ',' + Math.round(a[2] + (b[2] - a[2]) * t) + ')';
+  }
+  function cellRand(i, j) {
+    var x = (i * 374761393 + j * 668265263) | 0;
+    x = (x ^ (x >>> 13)) * 1274126177 | 0;
+    x = x ^ (x >>> 16);
+    return (x >>> 0) / 4294967296;
+  }
+
+  /* ---------- 들판 ---------- */
+  var fc = $('field'), fx = fc.getContext('2d'), FW = 600, FH = 340;
+  var deer = [], wolves = [], fx_effects = [];
+  var DEER_MAX = 220, WOLF_MAX = 60;
+
+  function newAgent(kind, near) {
+    var x, y;
+    if (near) { x = near.x + (Math.random() - 0.5) * 20; y = near.y + (Math.random() - 0.5) * 20; }
+    else { x = 20 + Math.random() * (FW - 40); y = 20 + Math.random() * (FH - 40); }
+    return { x: x, y: y, a: Math.random() * 6.283, v: 0.7 + Math.random() * 0.5, f: Math.random() < 0.5 ? 1 : -1, ph: Math.random() * 6.283 };
+  }
+  function nearest(list, x, y, maxd) {
+    var best = null, bd = maxd * maxd;
+    for (var i = 0; i < list.length; i++) {
+      var dx = list[i].x - x, dy = list[i].y - y, dd = dx * dx + dy * dy;
+      if (dd < bd) { bd = dd; best = list[i]; }
+    }
+    return best;
+  }
+  function syncAgents(hard) {
+    var nd = Math.min(DEER_MAX, Math.round(S.D)), nw = Math.min(WOLF_MAX, Math.round(S.W));
+    if (hard) { deer = []; wolves = []; }
+    while (deer.length < nd) deer.push(newAgent('d', deer.length && !hard ? deer[(Math.random() * deer.length) | 0] : null));
+    while (wolves.length < nw) wolves.push(newAgent('w', wolves.length && !hard ? wolves[(Math.random() * wolves.length) | 0] : null));
+    while (deer.length > nd) {
+      var idx = (Math.random() * deer.length) | 0;
+      if (wolves.length) {
+        var bd = 1e9, w = wolves[(Math.random() * wolves.length) | 0];
+        for (var i = 0; i < deer.length; i++) { var dd = (deer[i].x - w.x) * (deer[i].x - w.x) + (deer[i].y - w.y) * (deer[i].y - w.y); if (dd < bd) { bd = dd; idx = i; } }
+      }
+      fx_effects.push({ x: deer[idx].x, y: deer[idx].y, age: 0, c: '--deer' });
+      deer.splice(idx, 1);
+    }
+    while (wolves.length > nw) {
+      var wi = (Math.random() * wolves.length) | 0;
+      fx_effects.push({ x: wolves[wi].x, y: wolves[wi].y, age: 0, c: '--wolf' });
+      wolves.splice(wi, 1);
+    }
+    if (fx_effects.length > 80) fx_effects.splice(0, fx_effects.length - 80);
+  }
+  function moveAgents(dt) {
+    var i, a, w, d;
+    for (i = 0; i < deer.length; i++) {
+      a = deer[i];
+      a.a += (Math.random() - 0.5) * dt * 6;
+      var sp = 16 * a.v;
+      w = wolves.length ? nearest(wolves, a.x, a.y, 70) : null;
+      if (w) { var ang = Math.atan2(a.y - w.y, a.x - w.x); a.a = ang; sp *= 2.4; }
+      a.x += Math.cos(a.a) * sp * dt; a.y += Math.sin(a.a) * sp * dt;
+      bounce(a);
+      if (Math.abs(Math.cos(a.a)) > 0.3) a.f = Math.cos(a.a) > 0 ? 1 : -1;
+      a.ph += dt * sp * 0.45;
+    }
+    for (i = 0; i < wolves.length; i++) {
+      a = wolves[i];
+      a.a += (Math.random() - 0.5) * dt * 5;
+      var sw = 22 * a.v;
+      d = deer.length ? nearest(deer, a.x, a.y, 170) : null;
+      if (d) { a.a = Math.atan2(d.y - a.y, d.x - a.x); sw *= 1.5; }
+      a.x += Math.cos(a.a) * sw * dt; a.y += Math.sin(a.a) * sw * dt;
+      bounce(a);
+      if (Math.abs(Math.cos(a.a)) > 0.3) a.f = Math.cos(a.a) > 0 ? 1 : -1;
+      a.ph += dt * sw * 0.4;
+    }
+    for (i = fx_effects.length - 1; i >= 0; i--) { fx_effects[i].age += dt; if (fx_effects[i].age > 0.7) fx_effects.splice(i, 1); }
+  }
+  function bounce(a) {
+    if (a.x < 8) { a.x = 8; a.a = Math.PI - a.a; }
+    if (a.x > FW - 8) { a.x = FW - 8; a.a = Math.PI - a.a; }
+    if (a.y < 8) { a.y = 8; a.a = -a.a; }
+    if (a.y > FH - 8) { a.y = FH - 8; a.a = -a.a; }
+  }
+  function drawField() {
+    var ctx = fx, cell = Math.max(14, Math.round(FW / 40));
+    ctx.fillStyle = C['--soil']; ctx.fillRect(0, 0, FW, FH);
+    var phi = S.P / K, cols = Math.ceil(FW / cell), rows = Math.ceil(FH / cell), i, j;
+    for (j = 0; j < rows; j++) {
+      for (i = 0; i < cols; i++) {
+        var th = cellRand(i, j);
+        var g = Math.max(0, Math.min(1, (phi * 1.15 - th) / 0.3));
+        if (g <= 0.02) continue;
+        var tone = 0.88 + cellRand(j + 91, i + 17) * 0.24;
+        ctx.fillStyle = mix(C.soilRGB, [C.grassRGB[0] * tone, C.grassRGB[1] * tone, C.grassRGB[2] * tone], g);
+        ctx.fillRect(i * cell, j * cell, cell - 1, cell - 1);
+        if (g > 0.7) {
+          ctx.strokeStyle = 'rgba(0,0,0,0.16)'; ctx.lineWidth = 1; ctx.beginPath();
+          var cx = i * cell + cell * 0.5, cy = j * cell + cell * 0.75;
+          ctx.moveTo(cx - 3, cy); ctx.lineTo(cx - 4, cy - 5);
+          ctx.moveTo(cx, cy); ctx.lineTo(cx, cy - 7);
+          ctx.moveTo(cx + 3, cy); ctx.lineTo(cx + 4, cy - 5);
+          ctx.stroke();
+        }
+      }
+    }
+    var k;
+    for (k = 0; k < deer.length; k++) drawDeer(ctx, deer[k]);
+    for (k = 0; k < wolves.length; k++) drawWolf(ctx, wolves[k]);
+    for (k = 0; k < fx_effects.length; k++) {
+      var e = fx_effects[k], r = 4 + e.age * 22;
+      ctx.globalAlpha = Math.max(0, 1 - e.age / 0.7);
+      ctx.strokeStyle = C[e.c]; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(e.x, e.y, r, 0, 6.283); ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+  }
+  function legs(ctx, a, xs, y0, len, col, lw) {
+    ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.lineCap = 'round';
+    ctx.beginPath();
+    for (var i = 0; i < xs.length; i++) {
+      var sw = Math.sin(a.ph + (i % 2 ? Math.PI : 0) + i * 0.5) * 2.2;
+      ctx.moveTo(xs[i], y0); ctx.lineTo(xs[i] + sw, y0 + len);
+    }
+    ctx.stroke();
+  }
+  // 옆모습 사슴 (오른쪽을 보는 방향이 기본, 왼쪽이면 좌우 반전)
+  function drawDeer(ctx, a) {
+    var c = C['--deer'];
+    ctx.save(); ctx.translate(a.x, a.y); ctx.scale(a.f * 0.95, 0.95);
+    legs(ctx, a, [-4.5, -2.5, 3, 5], 2, 6.5, c, 1.3);
+    ctx.fillStyle = c;
+    ctx.beginPath(); ctx.ellipse(0, 0, 7, 3.6, 0, 0, 6.283); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(4, -1.5); ctx.lineTo(6.5, -7); ctx.lineTo(9, -6); ctx.lineTo(6.5, 1.5); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(9.8, -6.8, 3, 1.7, 0.35, 0, 6.283); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(7.2, -7.8); ctx.lineTo(6.2, -10.2); ctx.lineTo(8.4, -8.4); ctx.closePath(); ctx.fill();
+    ctx.lineWidth = 1; ctx.strokeStyle = c;
+    ctx.beginPath();
+    ctx.moveTo(8.4, -8.2); ctx.lineTo(8, -13); ctx.moveTo(8.1, -10.4); ctx.lineTo(10.6, -12.4); ctx.moveTo(8.2, -12); ctx.lineTo(6.6, -13.6);
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.beginPath(); ctx.ellipse(-7, -1.2, 1.5, 1.9, 0, 0, 6.283); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.2)';
+    ctx.beginPath(); ctx.ellipse(0, 1.8, 5.5, 1.4, 0, 0, 6.283); ctx.fill();
+    ctx.restore();
+  }
+  // 옆모습 늑대: 뾰족한 귀와 주둥이, 풍성한 꼬리
+  function drawWolf(ctx, a) {
+    var c = C['--wolf'];
+    ctx.save(); ctx.translate(a.x, a.y); ctx.scale(a.f * 0.9, 0.9);
+    legs(ctx, a, [-5, -3, 3.5, 5.5], 2, 6.2, c, 1.8);
+    ctx.fillStyle = c;
+    ctx.beginPath(); ctx.moveTo(-6, -2.5); ctx.quadraticCurveTo(-13.5, -2, -13, 4); ctx.quadraticCurveTo(-9, 1.6, -5.5, 1.8); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(0, 0, 7.5, 3.8, 0, 0, 6.283); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(4, -3); ctx.lineTo(8, -5.5); ctx.lineTo(9.5, -1); ctx.lineTo(5, 3); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(10.2, -3.7, 3.3, 2.6, 0, 0, 6.283); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(11.5, -5.2); ctx.lineTo(16.5, -3); ctx.lineTo(11.5, -1.2); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(8.2, -5.6); ctx.lineTo(8.4, -9.4); ctx.lineTo(10.8, -6); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(10.6, -6); ctx.lineTo(12, -9.4); ctx.lineTo(12.8, -5); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.22)';
+    ctx.beginPath(); ctx.ellipse(0, 1.8, 5.8, 1.5, 0, 0, 6.283); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(12.5, -2.6); ctx.lineTo(16, -3); ctx.lineTo(12.5, -1.4); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.95)';
+    ctx.beginPath(); ctx.arc(11.8, -4.1, 0.8, 0, 6.283); ctx.fill();
+    ctx.restore();
+  }
+
+  /* ---------- 생태 피라미드 ---------- */
+  var pc = $('pyr'), px = pc.getContext('2d'), PW = 300, PH = 190;
+  var WT_DEER = 2, WT_WOLF = 6;
+  function drawPyramid() {
+    var ctx = px, w = PW, h = PH;
+    ctx.clearRect(0, 0, w, h);
+    var labelW = 78, x0 = labelW, x1 = w - 6, mid = (x0 + x1) / 2, span = x1 - x0;
+    var gap = 6, th = (h - gap * 2) / 3;
+    var tiers = [
+      { name: '늑대', v: S.W * WT_WOLF, eq: EQ.W * WT_WOLF, col: C['--wolf'], n: Math.round(S.W) + '마리' },
+      { name: '사슴', v: S.D * WT_DEER, eq: EQ.D * WT_DEER, col: C['--deer'], n: Math.round(S.D) + '마리' },
+      { name: '식물', v: S.P, eq: EQ.P, col: C['--plant'], n: '지수 ' + Math.round(S.P) }
+    ];
+    for (var i = 0; i < 3; i++) {
+      var t = tiers[i], top = i * (th + gap);
+      var ew = t.eq / K * span, vw = Math.min(t.v / K, 1) * span;
+      ctx.fillStyle = C['--panel-2']; ctx.globalAlpha = 0.5; ctx.fillRect(x0, top, span, th); ctx.globalAlpha = 1;
+      if (vw > 0) { ctx.fillStyle = t.col; ctx.globalAlpha = 0.9; ctx.fillRect(mid - Math.max(vw, 2) / 2, top, Math.max(vw, 2), th); ctx.globalAlpha = 1; }
+      ctx.setLineDash([4, 3]); ctx.lineWidth = 1.5; ctx.strokeStyle = C['--ink'];
+      ctx.strokeRect(mid - ew / 2 + 0.5, top + 0.5, ew, th - 1); ctx.setLineDash([]);
+      ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+      ctx.font = '600 13px "IBM Plex Sans KR", sans-serif'; ctx.fillStyle = C['--ink'];
+      ctx.fillText(t.name, 4, top + th / 2 - 8);
+      ctx.font = '11px "IBM Plex Mono", ui-monospace, monospace'; ctx.fillStyle = C['--ink-2'];
+      ctx.fillText(t.n, 4, top + th / 2 + 8);
+    }
+  }
+  function pyramidNote() {
+    if (S.D === 0) return '사슴이 없어 가운데 단계가 비었어요.';
+    if (S.D * WT_DEER > S.P) return '사슴이 식물보다 많아져 피라미드가 뒤집혔어요. 먹이가 모자란 불안정한 상태예요.';
+    if (S.W === 0) return '맨 위 단계가 비어 있어요. 사슴을 조절해 주는 포식자가 없는 상태예요.';
+    if (deviation() < 0.25) return '아래 단계일수록 넓은 피라미드 모양이 안정적으로 유지돼요.';
+    return '점선과 비교해 어느 단계가 넓어지고 좁아졌는지 살펴보세요.';
+  }
+
+  /* ---------- 그래프 ---------- */
+  var cc = $('chart'), cx = cc.getContext('2d'), CW = 700, CH = 440, hover = null;
+  var NICE = [10, 20, 30, 40, 50, 60, 80, 100, 120, 150, 200, 250, 300, 400, 500, 600, 800, 1000, 1200, 1500, 2000];
+  function niceMax(v) { for (var i = 0; i < NICE.length; i++) if (NICE[i] >= v) return NICE[i]; return Math.ceil(v / 500) * 500; }
+  var SPAN = 80;
+
+  function drawChart() {
+    var ctx = cx, w = CW, h = CH;
+    ctx.clearRect(0, 0, w, h);
+    var padL = 44, padR = 14, padT = 24, padB = 26, gap = 12;
+    var ph = (h - padT - padB - gap * 2) / 3;
+    var t1 = Math.max(S.t, SPAN), t0 = t1 - SPAN;
+    var x0 = padL, x1 = w - padR;
+    function X(t) { return x0 + (t - t0) / (t1 - t0) * (x1 - x0); }
+    var lo = 0, hi = hT.length;
+    while (lo < hi) { var m = (lo + hi) >> 1; if (hT[m] < t0 - 0.5) lo = m + 1; else hi = m; }
+    var first = Math.max(0, lo - 1);
+    var vmaxD = EQ.D * 1.4, vmaxW = EQ.W * 1.4, i;
+    for (i = first; i < hT.length; i++) { if (hD[i] > vmaxD) vmaxD = hD[i]; if (hW[i] > vmaxW) vmaxW = hW[i]; }
+    var series = [
+      { key: 'P', arr: hP, name: '식물량 (지수)', col: C['--plant'], max: K, eq: EQ.P, cur: S.P },
+      { key: 'D', arr: hD, name: '사슴 (마리)', col: C['--deer'], max: niceMax(vmaxD * 1.08), eq: EQ.D, cur: S.D },
+      { key: 'W', arr: hW, name: '늑대 (마리)', col: C['--wolf'], max: niceMax(vmaxW * 1.08), eq: EQ.W, cur: S.W }
+    ];
+    ctx.font = '11px "IBM Plex Mono", ui-monospace, monospace';
+    ctx.textBaseline = 'middle';
+
+    // 개입 구간 음영
+    var si, s;
+    for (si = 0; si < spans.length; si++) {
+      s = spans[si];
+      var a = X(Math.max(s.t0, t0)), b = X(Math.min(s.t1 === null ? S.t : s.t1, t1));
+      if (b < x0 || a > x1 || b <= a) continue;
+      ctx.globalAlpha = 0.11; ctx.fillStyle = s.type === 'hunt' ? C['--alert'] : C['--warn'];
+      ctx.fillRect(a, padT, b - a, h - padT - padB);
+      ctx.globalAlpha = 1;
+    }
+    // 세로 눈금선, x축
+    ctx.strokeStyle = C['--line']; ctx.lineWidth = 1; ctx.fillStyle = C['--ink-2'];
+    ctx.textAlign = 'center';
+    var step = 10, tk = Math.ceil(t0 / step) * step;
+    for (; tk <= t1 + 0.001; tk += step) {
+      var xx = Math.round(X(tk)) + 0.5;
+      ctx.globalAlpha = 0.7;
+      ctx.beginPath(); ctx.moveTo(xx, padT); ctx.lineTo(xx, h - padB); ctx.stroke();
+      ctx.globalAlpha = 1;
+      ctx.fillText(tk + '년', xx, h - padB + 14);
+    }
+    for (var p = 0; p < 3; p++) {
+      var sr = series[p], top = padT + p * (ph + gap), bot = top + ph;
+      function Y(v) { return bot - Math.min(v, sr.max) / sr.max * ph; }
+      // 패널 배경, 가로 눈금
+      ctx.fillStyle = C['--panel-2']; ctx.globalAlpha = 0.45; ctx.fillRect(x0, top, x1 - x0, ph); ctx.globalAlpha = 1;
+      ctx.strokeStyle = C['--line']; ctx.lineWidth = 1; ctx.fillStyle = C['--ink-2']; ctx.textAlign = 'right';
+      [0, 0.5, 1].forEach(function (f) {
+        var yy = Math.round(bot - f * ph) + 0.5;
+        ctx.beginPath(); ctx.moveTo(x0, yy); ctx.lineTo(x1, yy); ctx.stroke();
+        ctx.fillText(String(Math.round(sr.max * f)), x0 - 6, Math.min(Math.max(yy, top + 6), bot - 2));
+      });
+      // 평형선
+      ctx.setLineDash([5, 4]); ctx.strokeStyle = C['--ink-2']; ctx.lineWidth = 1.3;
+      ctx.beginPath(); ctx.moveTo(x0, Y(sr.eq)); ctx.lineTo(x1, Y(sr.eq)); ctx.stroke(); ctx.setLineDash([]);
+      // 면 + 선
+      ctx.beginPath();
+      var started = false, lastX = x0, lastY = bot;
+      for (i = first; i < hT.length; i++) {
+        var px = X(hT[i]), py = Y(sr.arr[i]);
+        if (px < x0) px = x0;
+        if (!started) { ctx.moveTo(px, py); started = true; } else ctx.lineTo(px, py);
+        lastX = px; lastY = py;
+      }
+      if (started) {
+        ctx.strokeStyle = sr.col; ctx.lineWidth = 2.2; ctx.lineJoin = 'round'; ctx.stroke();
+        ctx.lineTo(lastX, bot); ctx.lineTo(Math.max(x0, X(hT[first])), bot); ctx.closePath();
+        ctx.globalAlpha = 0.14; ctx.fillStyle = sr.col; ctx.fill(); ctx.globalAlpha = 1;
+        ctx.beginPath(); ctx.arc(lastX, lastY, 4, 0, 6.283); ctx.fillStyle = sr.col; ctx.fill();
+        ctx.lineWidth = 2; ctx.strokeStyle = C['--panel']; ctx.stroke();
+      }
+      // 제목 (후광)
+      ctx.textAlign = 'left'; ctx.font = '600 12px "IBM Plex Sans KR", sans-serif';
+      ctx.lineWidth = 4; ctx.strokeStyle = C['--panel']; ctx.strokeText(sr.name, x0 + 18, top + 12);
+      ctx.fillStyle = sr.col; ctx.fillRect(x0 + 6, top + 7, 8, 8);
+      ctx.fillStyle = C['--ink']; ctx.fillText(sr.name, x0 + 18, top + 12);
+      ctx.font = '11px "IBM Plex Mono", ui-monospace, monospace';
+      ctx.textAlign = 'right'; ctx.lineWidth = 4; ctx.strokeStyle = C['--panel'];
+      var eqLabel = '평형 ' + Math.round(sr.eq);
+      var ly = Y(sr.eq) + (Y(sr.eq) < top + 16 ? 10 : -8);
+      ctx.strokeText(eqLabel, x1 - 4, ly); ctx.fillStyle = C['--ink-2']; ctx.fillText(eqLabel, x1 - 4, ly);
+    }
+    // 개입 표지 (상단)
+    var labs = [];
+    marks.forEach(function (m) { labs.push({ t: m.t, label: m.label, line: true, col: C['--alert'] }); });
+    spans.forEach(function (sp) { labs.push({ t: sp.t0, label: sp.label, line: true, col: sp.type === 'hunt' ? C['--alert'] : C['--warn'] }); });
+    labs.sort(function (a, b) { return a.t - b.t; });
+    var lastEnd = -1e9;
+    ctx.textBaseline = 'middle';
+    labs.forEach(function (lb) {
+      if (lb.t < t0 || lb.t > t1) return;
+      var lx = X(lb.t);
+      ctx.strokeStyle = lb.col; ctx.lineWidth = 1.5; ctx.globalAlpha = 0.85;
+      ctx.beginPath(); ctx.moveTo(lx, padT - 6); ctx.lineTo(lx, h - padB); ctx.stroke(); ctx.globalAlpha = 1;
+      ctx.font = '600 11px "IBM Plex Sans KR", sans-serif';
+      var tw = ctx.measureText(lb.label).width, tx = Math.min(lx + 4, w - tw - 4);
+      if (tx > lastEnd + 6) { ctx.textAlign = 'left'; ctx.fillStyle = lb.col; ctx.fillText(lb.label, tx, 9); lastEnd = tx + tw; }
+    });
+    // 호버
+    if (hover !== null) {
+      var ht = t0 + (hover - x0) / (x1 - x0) * (t1 - t0);
+      if (ht >= t0 && ht <= S.t && hT.length) {
+        var bi = 0, bdist = 1e9;
+        for (i = first; i < hT.length; i++) { var dd = Math.abs(hT[i] - ht); if (dd < bdist) { bdist = dd; bi = i; } }
+        var hx = X(hT[bi]);
+        ctx.strokeStyle = C['--ink']; ctx.globalAlpha = 0.5; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(hx, padT); ctx.lineTo(hx, h - padB); ctx.stroke(); ctx.globalAlpha = 1;
+        var tip = $('tip');
+        tip.style.display = 'block';
+        tip.textContent = hT[bi].toFixed(1) + '년  식물 ' + Math.round(hP[bi]) + ' · 사슴 ' + Math.round(hD[bi]) + ' · 늑대 ' + Math.round(hW[bi]);
+        var tw2 = tip.offsetWidth;
+        tip.style.left = Math.max(4, Math.min(w - tw2 - 4, hx - tw2 / 2)) + 'px';
+        tip.style.top = (padT + 4) + 'px';
+      } else $('tip').style.display = 'none';
+    } else $('tip').style.display = 'none';
+  }
+
+  /* ---------- 크기 조정 ---------- */
+  function fit(canvas, ctx, wrap, cb) {
+    var r = wrap.getBoundingClientRect();
+    var w = Math.max(200, Math.round(r.width)), h = Math.max(120, Math.round(r.height));
+    var dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    cb(w, h);
+  }
+  function resizeAll() {
+    fit(fc, fx, fc.parentElement, function (w, h) {
+      var ow = FW, oh = FH; FW = w; FH = h;
+      deer.concat(wolves).forEach(function (a) { a.x = a.x / ow * FW; a.y = a.y / oh * FH; });
+    });
+    fit(cc, cx, $('chartWrap'), function (w, h) { CW = w; CH = h; });
+    fit(pc, px, $('pyrWrap'), function (w, h) { PW = w; PH = h; });
+  }
+  if (window.ResizeObserver) {
+    var ro = new ResizeObserver(resizeAll);
+    ro.observe(fc.parentElement); ro.observe($('chartWrap')); ro.observe($('pyrWrap'));
+  }
+  window.addEventListener('resize', resizeAll);
+
+  /* ---------- 입력 ---------- */
+  $('play').addEventListener('click', function () {
+    if (scn && scn.pending) { runPending(); return; }
+    running = !running; syncPlay();
+  });
+  $('step').addEventListener('click', function () {
+    if (scn && scn.pending) return;
+    advance(1);
+    syncAgents(false);
+  });
+  $('reset').addEventListener('click', function () { resetAll(false); running = false; syncPlay(); });
+  $('speed').addEventListener('input', function (e) { speedIdx = +e.target.value; syncSpeed(); });
+  $('noise').addEventListener('change', function (e) { noiseOn = e.target.checked; });
+  $('aHunt').addEventListener('click', doHunt);
+  $('aReintro').addEventListener('click', doReintro);
+  $('aDeer').addEventListener('click', doDeer);
+  $('aDrought').addEventListener('click', doDrought);
+  $('scnStart').addEventListener('click', startScenario);
+  $('predictGo').addEventListener('click', runPending);
+
+  var chartWrap = $('chartWrap');
+  function setHover(e) {
+    var r = chartWrap.getBoundingClientRect();
+    hover = e.clientX - r.left;
+  }
+  chartWrap.addEventListener('pointermove', setHover);
+  chartWrap.addEventListener('pointerdown', setHover);
+  chartWrap.addEventListener('pointerleave', function () { hover = null; });
+  chartWrap.addEventListener('pointercancel', function () { hover = null; });
+
+  /* ---------- 메인 루프 ---------- */
+  var last = performance.now(), frameN = 0;
+  function frame(now) {
+    var dtReal = Math.min(0.1, (now - last) / 1000); last = now;
+    if (frameN % 20 === 0) readColors();
+    if (running) advance(dtReal * SPEEDS[speedIdx]);
+    syncAgents(false);
+    moveAgents(running ? dtReal : 0);
+    drawField();
+    drawChart();
+    drawPyramid();
+    if (frameN % 4 === 0) { updateReadout(); var pn = pyramidNote(); if ($('pyrNote').textContent !== pn) $('pyrNote').textContent = pn; }
+    frameN++;
+    requestAnimationFrame(frame);
+  }
+
+  computeEq();
+  readColors();
+  syncSpeed(); syncButtons(); syncScn(); renderLog();
+  resizeAll();
+  resetAll(true);
+  record();
+  syncPlay();
+  updateReadout();
+  requestAnimationFrame(frame);
+})();
+</script>
